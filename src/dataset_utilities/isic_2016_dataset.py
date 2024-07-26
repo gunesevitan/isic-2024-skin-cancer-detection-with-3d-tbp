@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
     for idx, row in tqdm(df_train.iterrows(), total=df_train.shape[0]):
 
-        image = cv2.imread(train_image_directory / f'{row["id"]}.jpg')
+        image = cv2.imread(train_image_directory / f'{row["isic_id"]}.jpg')
 
         height, width = image.shape[:2]
         df_train.loc[idx, 'height'] = height
@@ -32,11 +32,11 @@ if __name__ == '__main__':
 
     df_train['height'] = df_train['height'].astype(int)
     df_train['width'] = df_train['width'].astype(int)
-    df_train['image_path'] = df_train['id'].apply(lambda x: str(train_image_directory / f'{str(x)}.jpg'))
+    df_train['image_path'] = df_train['isic_id'].apply(lambda x: str(train_image_directory / f'{str(x)}.jpg'))
 
     for idx, row in tqdm(df_test.iterrows(), total=df_test.shape[0]):
 
-        image = cv2.imread(test_image_directory / f'{row["id"]}.jpg')
+        image = cv2.imread(test_image_directory / f'{row["isic_id"]}.jpg')
 
         height, width = image.shape[:2]
         df_test.loc[idx, 'height'] = height
@@ -44,11 +44,14 @@ if __name__ == '__main__':
 
     df_test['height'] = df_test['height'].astype(int)
     df_test['width'] = df_test['width'].astype(int)
-    df_test['image_path'] = df_test['id'].apply(lambda x: str(test_image_directory / f'{str(x)}.jpg'))
+    df_test['image_path'] = df_test['isic_id'].apply(lambda x: str(test_image_directory / f'{str(x)}.jpg'))
 
     df_metadata = pd.concat((df_train, df_test), axis=0).reset_index(drop=True)
     df_metadata['id'] = pd.Series(df_metadata.index).apply(lambda x: f'isic_2016_{x}')
     df_metadata['dataset'] = 'isic_2016'
+
+    columns = ['id', 'isic_id', 'target', 'dataset', 'height', 'width', 'image_path']
+    df_metadata = df_metadata[columns].copy(deep=True)
 
     df_metadata.to_parquet(output_directory / 'isic-2016-metadata.parquet')
     settings.logger.info(f'isic-2016-metadata.parquet is saved to {output_directory}')
