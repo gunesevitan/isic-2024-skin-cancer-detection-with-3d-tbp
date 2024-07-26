@@ -81,7 +81,7 @@ if __name__ == '__main__':
     columns = [
         'id', 'isic_id', 'target', 'nevus',
         'basal_cell_carcinoma', 'actinic_keratosis',
-        'benign_keratosis', 'dermatofibroma',
+        'benign_keratosis', 'dermatofibroma', 'vascular_lesion',
         'dataset', 'height', 'width', 'image_path'
     ]
     df_metadata = df_metadata[columns].copy(deep=True)
