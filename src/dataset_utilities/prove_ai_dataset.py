@@ -39,7 +39,7 @@ if __name__ == '__main__':
         'lesion_id', 'melanocytic'
     ])
     df_metadata['target'] = df_metadata['benign_malignant'].map({'benign': 0, 'malignant': 1})
-    df_metadata['id'] = pd.Series(df_metadata.index).apply(lambda x: f'prove_ai_{x}')
+    df_metadata['id'] = pd.Series(df_metadata.index).apply(lambda x: f'prove-ai_{x}')
     df_metadata['dataset'] = 'prove-ai'
 
     columns = [
@@ -48,5 +48,5 @@ if __name__ == '__main__':
     ]
     df_metadata = df_metadata[columns].copy(deep=True)
 
-    df_metadata.to_parquet(output_directory / 'prove_ai-metadata.parquet')
-    settings.logger.info(f'prove_ai-metadata.parquet is saved to {output_directory}')
+    df_metadata.to_parquet(output_directory / 'prove-ai-metadata.parquet')
+    settings.logger.info(f'prove-ai-metadata.parquet is saved to {output_directory}')
