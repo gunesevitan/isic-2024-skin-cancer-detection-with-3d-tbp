@@ -1,9 +1,9 @@
 import sys
 from tqdm import tqdm
 import json
+import numpy as np
 import pandas as pd
 import cv2
-from imagededup.methods import PHash
 
 sys.path.append('..')
 import settings
@@ -48,7 +48,19 @@ if __name__ == '__main__':
     df_isic_2020_duplicates = pd.read_csv(settings.DATA / 'isic-2020-challenge' / 'ISIC_2020_Training_Duplicates.csv')
     df_metadata = df_metadata.loc[~df_metadata['isic_id'].isin(df_isic_2020_duplicates['image_name_2'])]
     df_metadata = df_metadata.loc[~df_metadata['isic_id'].apply(lambda x: 'down' in x)]
-    df_metadata = df_metadata.drop_duplicates(subset='isic_id', keep='last')
+    df_metadata = df_metadata.drop_duplicates(subset='isic_id', keep='last').reset_index(drop=True)
+
+    track_stats = False
+    if track_stats:
+        for idx, row in tqdm(df_metadata.iterrows(), total=df_metadata.shape[0]):
+
+            image = cv2.imread(row['image_path'])
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+            means = np.mean(image, axis=(0, 1))
+            df_metadata.loc[idx, 'r_mean'] = means[0]
+            df_metadata.loc[idx, 'g_mean'] = means[1]
+            df_metadata.loc[idx, 'b_mean'] = means[2]
 
     duplicate_ids = [
         'ISIC_0001239', 'ISIC_0001241', 'ISIC_0001243', 'ISIC_0001240',
@@ -184,7 +196,8 @@ if __name__ == '__main__':
         'ISIC_2391447', 'ISIC_2507875', 'ISIC_8683473', 'ISIC_2192031',
         'ISIC_4819603', 'ISIC_5866452', 'ISIC_2190511'
     ]
-    df_metadata = df_metadata.loc[~df_metadata['isic_id'].isin(duplicate_ids)].reset_index(drop=True)
+    #df_metadata = df_metadata.loc[~df_metadata['isic_id'].isin(duplicate_ids)].reset_index(drop=True)
+    df_metadata = df_metadata.drop_duplicates(subset=['r_mean', 'g_mean', 'b_mean'], keep='last')
     settings.logger.info(
         f'''
         ISIC Datasets Target Counts
