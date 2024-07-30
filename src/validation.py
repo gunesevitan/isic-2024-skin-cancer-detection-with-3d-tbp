@@ -1,7 +1,7 @@
 import json
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
 
 import settings
 
@@ -40,11 +40,18 @@ def create_folds(df, stratify_column, group_column, n_splits, shuffle=True, rand
         Dataframe with created fold columns
     """
 
-    sgkf = StratifiedGroupKFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
-    for fold, (training_idx, validation_idx) in enumerate(sgkf.split(X=df, y=df[stratify_column], groups=df[group_column]), 1):
-        df.loc[training_idx, f'fold{fold}'] = 0
-        df.loc[validation_idx, f'fold{fold}'] = 1
-        df[f'fold{fold}'] = df[f'fold{fold}'].astype(np.uint8)
+    if group_column is not None:
+        sgkf = StratifiedGroupKFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+        for fold, (training_idx, validation_idx) in enumerate(sgkf.split(X=df, y=df[stratify_column], groups=df[group_column]), 1):
+            df.loc[training_idx, f'fold{fold}'] = 0
+            df.loc[validation_idx, f'fold{fold}'] = 1
+            df[f'fold{fold}'] = df[f'fold{fold}'].astype(np.uint8)
+    else:
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+        for fold, (training_idx, validation_idx) in enumerate(skf.split(X=df, y=df[stratify_column]), 1):
+            df.loc[training_idx, f'fold{fold}'] = 0
+            df.loc[validation_idx, f'fold{fold}'] = 1
+            df[f'fold{fold}'] = df[f'fold{fold}'].astype(np.uint8)
 
     if verbose:
 
@@ -87,5 +94,25 @@ if __name__ == '__main__':
         verbose=True
     )
 
-    df_train_metadata[['isic_id'] + [f'fold{fold}' for fold in range(1, n_splits + 1)]].to_csv(settings.DATA / 'folds.csv', index=False)
+    df_isic_master_dataset_metadata = pd.read_parquet(settings.DATA / 'isic_master_dataset' / 'metadata.parquet')
+    df_isic_master_dataset_metadata = df_isic_master_dataset_metadata.loc[
+        (df_isic_master_dataset_metadata['dataset'] != 'isic_2024') &
+        (df_isic_master_dataset_metadata['target'].notna())
+    ].reset_index(drop=True)
+    df_isic_master_dataset_metadata['stratify_column'] = df_isic_master_dataset_metadata['target'].astype(str) + df_isic_master_dataset_metadata['dataset']
+    df_isic_master_dataset_metadata = create_folds(
+        df=df_isic_master_dataset_metadata,
+        stratify_column='stratify_column',
+        group_column=None,
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=0,
+        verbose=True
+    )
+
+    df_folds = pd.concat((
+        df_train_metadata[['isic_id'] + [f'fold{fold}' for fold in range(1, n_splits + 1)]],
+        df_isic_master_dataset_metadata[['isic_id'] + [f'fold{fold}' for fold in range(1, n_splits + 1)]]
+    ))
+    df_folds.to_csv(settings.DATA / 'folds.csv', index=False)
     settings.logger.info(f'folds.csv is saved to {settings.DATA}')
