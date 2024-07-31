@@ -1,6 +1,5 @@
 import os
 import sys
-import warnings
 import argparse
 import yaml
 import json
@@ -13,14 +12,14 @@ import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import torch.optim as optim
 
+sys.path.append('..')
+import settings
 import torch_datasets
 import torch_modules
 import torch_utilities
 import transforms
 import metrics
 import visualization
-sys.path.append('..')
-import settings
 
 
 def train(training_loader, model, criterion, optimizer, device, scheduler=None, amp=False):
@@ -134,7 +133,7 @@ def validate(validation_loader, model, criterion, device, amp=False):
     validation_outputs: dict
         Dictionary of validation outputs
 
-    validation_predictions: torch.Tensor of shape (batch_size, n_outputs)
+    validation_predictions: torch.Tensor of shape (n_samples, n_outputs)
         Validation predictions
     """
 
@@ -174,8 +173,6 @@ def validate(validation_loader, model, criterion, device, amp=False):
 
 if __name__ == '__main__':
 
-    #warnings.filterwarnings('ignore')
-
     parser = argparse.ArgumentParser()
     parser.add_argument('model_directory', type=str)
     parser.add_argument('mode', type=str)
@@ -190,13 +187,13 @@ if __name__ == '__main__':
         on='isic_id',
         how='right'
     )
-
     settings.logger.info(f'Dataset Shape {df.shape}')
 
-    image_paths, features, targets = torch_datasets.prepare_dataset(df=df, features=None)
+    image_paths, _, targets = torch_datasets.prepare_dataset(df=df, features=None)
     image_transforms = transforms.get_image_transforms(**config['transforms'])
     training_datasets = config['dataset']['training']
     validation_datasets = config['dataset']['validation']
+    negative_sample_count = config['dataset']['negative_sample_count']
 
     torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -212,7 +209,7 @@ if __name__ == '__main__':
 
             np.random.seed(42)
             training_positive_idx = np.where(training_mask & (df['target'] == 1))[0]
-            training_negative_idx = np.random.choice(np.where(training_mask & (df['target'] == 0))[0], 10000)
+            training_negative_idx = np.random.choice(np.where(training_mask & (df['target'] == 0))[0], negative_sample_count)
             training_idx = np.concatenate((training_positive_idx, training_negative_idx))
 
             settings.logger.info(
@@ -223,7 +220,6 @@ if __name__ == '__main__':
                 '''
             )
 
-            # Create training and validation datasets and dataloaders
             training_dataset = torch_datasets.TabularImageDataset(
                 image_paths=image_paths[training_idx],
                 features=None,
@@ -253,7 +249,6 @@ if __name__ == '__main__':
                 num_workers=config['training']['num_workers']
             )
 
-            # Set model, device and seed for reproducible results
             torch_utilities.set_seed(config['training']['random_state'], deterministic_cudnn=config['training']['deterministic_cudnn'])
             device = torch.device(config['training']['device'])
             criterion = getattr(torch_modules, config['training']['loss_function'])(**config['training']['loss_function_args'])
@@ -265,18 +260,15 @@ if __name__ == '__main__':
                 model.load_state_dict(torch.load(model_checkpoint_path), strict=False)
             model.to(device)
 
-            # Set optimizer, learning rate scheduler and stochastic weight averaging
             optimizer = getattr(torch.optim, config['training']['optimizer'])(model.parameters(), **config['training']['optimizer_args'])
             scheduler = getattr(optim.lr_scheduler, config['training']['lr_scheduler'])(optimizer, **config['training']['lr_scheduler_args'])
             amp = config['training']['amp']
 
+            epochs = config['training']['epochs']
             best_epoch = 1
-            early_stopping = False
-            early_stopping_patience = config['training']['early_stopping_patience']
-            early_stopping_metric = config['training']['early_stopping_metric']
             training_history = {f'{dataset}_{metric}': [] for metric in config['persistence']['save_best_metrics'] for dataset in ['training', 'validation']}
 
-            for epoch in range(1, config['training']['epochs'] + 1):
+            for epoch in range(1, epochs + 1):
 
                 training_outputs = train(
                     training_loader=training_loader,
@@ -326,35 +318,51 @@ if __name__ == '__main__':
                 )
 
                 if epoch in config['persistence']['save_epochs']:
-                    # Save model if epoch is specified to be saved
                     model_name = f'model_fold_{fold}_epoch_{epoch}.pt'
                     torch.save(model.state_dict(), model_directory / model_name)
                     settings.logger.info(f'Saved {model_name} to {model_directory}')
 
-                for metric in config['persistence']['save_best_metrics']:
+                for metric, higher_or_lower in zip(config['persistence']['save_best_metrics'], config['persistence']['save_best_metric_higher_or_lower']):
 
-                    best_validation_metric = np.min(training_history[f'validation_{metric}']) if len(training_history[f'validation_{metric}']) > 0 else np.inf
                     last_validation_metric = validation_results[metric]
-                    
-                    if last_validation_metric < best_validation_metric:
+
+                    if higher_or_lower == 'lower':
+                        best_validation_metric = np.min(training_history[f'validation_{metric}']) if len(training_history[f'validation_{metric}']) > 0 else np.inf
+                        save_condition = last_validation_metric < best_validation_metric
+                    elif higher_or_lower == 'higher':
+                        best_validation_metric = np.max(training_history[f'validation_{metric}']) if len(training_history[f'validation_{metric}']) > 0 else -np.inf
+                        save_condition = last_validation_metric > best_validation_metric
+                    else:
+                        raise ValueError(f'Invalid save_best_metric_higher_or_lower value {higher_or_lower}')
+
+                    if save_condition:
 
                         previous_model = glob(str(model_directory / f'model_fold_{fold}_epoch_*_best_{metric}*'))
                         if len(previous_model) > 0:
                             os.remove(previous_model[0])
                             settings.logger.info(f'Deleted {previous_model[0].split("/")[-1]} from {model_directory}')
 
-                        # Save model if specified validation metric improves
                         model_name = f'model_fold_{fold}_epoch_{epoch}_best_{metric}_{last_validation_metric:.6f}.pt'
                         torch.save(model.state_dict(), model_directory / model_name)
-                        settings.logger.info(f'Saved {model_name} to {model_directory} (validation {metric} decreased from {best_validation_metric:.6f} to {last_validation_metric:.6f})\n')
+                        settings.logger.info(f'Saved {model_name} to {model_directory} (validation {metric} increased/decreased from {best_validation_metric:.6f} to {last_validation_metric:.6f})\n')
 
-                    if metric == 'loss':
+                    if metric in training_results.keys():
                         training_history[f'training_{metric}'].append(training_results[metric])
+                    else:
+                        training_history[f'training_{metric}'].append(np.nan)
                     training_history[f'validation_{metric}'].append(validation_results[metric])
 
-            training_metadata['training_history'] = training_history
-            for metric in config['persistence']['save_best_metrics']:
-                best_epoch = int(np.argmin(training_history[f'validation_{metric}']))
+                training_metadata['training_history'] = training_history
+
+            for metric, higher_or_lower in zip(config['persistence']['save_best_metrics'], config['persistence']['save_best_metric_higher_or_lower']):
+
+                if higher_or_lower == 'lower':
+                    best_epoch = int(np.argmin(training_history[f'validation_{metric}']))
+                elif higher_or_lower == 'higher':
+                    best_epoch = int(np.argmax(training_history[f'validation_{metric}']))
+                else:
+                    raise ValueError(f'Invalid save_best_metric_higher_or_lower value {higher_or_lower}')
+
                 training_metadata[f'best_epoch_{metric}'] = best_epoch + 1
                 training_metadata[f'training_{metric}'] = float(training_history[f'training_{metric}'][best_epoch])
                 training_metadata[f'validation_{metric}'] = float(training_history[f'validation_{metric}'][best_epoch])
