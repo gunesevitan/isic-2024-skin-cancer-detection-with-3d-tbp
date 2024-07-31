@@ -1,60 +1,5 @@
 import numpy as np
-from sklearn.metrics import (
-    log_loss, accuracy_score, roc_auc_score,
-    precision_score, recall_score, f1_score,
-    average_precision_score, confusion_matrix,
-    roc_curve, precision_recall_curve
-)
-
-
-def round_probabilities(probabilities, threshold):
-
-    """
-    Round probabilities to labels based on the given threshold
-
-    Parameters
-    ----------
-    probabilities : numpy.ndarray of shape (n_samples)
-        Predicted probabilities
-
-    threshold: float
-        Rounding threshold
-
-    Returns
-    -------
-    labels : numpy.ndarray of shape (n_samples)
-        Rounded probabilities
-    """
-
-    labels = np.zeros_like(probabilities, dtype=np.uint8)
-    labels[probabilities >= threshold] = 1
-
-    return labels
-
-
-def specificity_score(y_true, y_pred):
-
-    """
-    Calculate specificity score (true-negative rate) of predicted labels
-
-    Parameters
-    ----------
-    y_true: numpy.ndarray of shape (n_samples)
-        Ground truth labels
-
-    y_pred: numpy.ndarray of shape (n_samples)
-        Predicted labels
-
-    Returns
-    -------
-    score: float
-        Specificity score between 0 and 1
-    """
-
-    tn, fp, _, _ = confusion_matrix(y_true, y_pred).ravel()
-    score = tn / (tn + fp)
-
-    return score
+from sklearn.metrics import log_loss, roc_auc_score, roc_curve, precision_recall_curve
 
 
 def partial_auc(y_true, y_pred, min_tpr=0.80):
@@ -69,6 +14,9 @@ def partial_auc(y_true, y_pred, min_tpr=0.80):
 
     y_pred: numpy.ndarray of shape (n_samples)
         Predicted probabilities
+
+    min_tpr: float
+        Minimum true-positive rate
 
     Returns
     -------
