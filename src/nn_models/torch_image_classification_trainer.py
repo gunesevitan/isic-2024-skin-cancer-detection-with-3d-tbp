@@ -279,7 +279,6 @@ if __name__ == '__main__':
                     scheduler=scheduler,
                     amp=amp
                 )
-
                 validation_outputs, validation_predictions = validate(
                     validation_loader=validation_loader,
                     model=model,
@@ -381,44 +380,6 @@ if __name__ == '__main__':
 
     elif args.mode == 'test':
 
-        conditions = ['spinal_canal_stenosis', 'neural_foraminal_narrowing', 'subarticular_stenosis']
-        levels = ['l1_l2', 'l2_l3', 'l3_l4', 'l4_l5', 'l5_s1']
-        sides = ['left', 'right']
-        label_mapping = {'Normal/Mild': 0, 'Moderate': 1, 'Severe': 2}
-
-        df_train_stack = []
-
-        for _, row in tqdm(df_train.drop_duplicates(subset='study_id').iterrows(), total=df_train['study_id'].nunique()):
-            for condition in conditions:
-                    if condition != 'spinal_canal_stenosis':
-                        for side in sides:
-                            for level in levels:
-                                target_column = f'{side}_{condition}_{level}'
-                                df_train_stack.append({
-                                    'study_id': row['study_id'],
-                                    'condition': condition,
-                                    'level': level,
-                                    'side': side,
-                                    'Normal/Mild': int(row[target_column] == 0) if pd.isnull(row[target_column]) is False else np.nan,
-                                    'Moderate': int(row[target_column] == 1) if pd.isnull(row[target_column]) is False else np.nan,
-                                    'Severe': int(row[target_column] == 2) if pd.isnull(row[target_column]) is False else np.nan
-                                })
-                    else:
-                        for level in levels:
-                            target_column = f'{condition}_{level}'
-                            df_train_stack.append({
-                                'study_id': row['study_id'],
-                                'condition': condition,
-                                'level': level,
-                                'side': np.nan,
-                                'Normal/Mild': int(row[target_column] == 0) if pd.isnull(row[target_column]) is False else np.nan,
-                                'Moderate': int(row[target_column] == 1) if pd.isnull(row[target_column]) is False else np.nan,
-                                'Severe': int(row[target_column] == 2) if pd.isnull(row[target_column]) is False else np.nan
-                            })
-
-        df_train_stack = pd.DataFrame(df_train_stack)
-        df_train_stack = metrics.create_sample_weights(df_train_stack)
-
         # Set model, device and seed for reproducible results
         torch_utilities.set_seed(config['training']['random_state'], deterministic_cudnn=config['training']['deterministic_cudnn'])
         device = torch.device(config['training']['device'])
@@ -426,17 +387,19 @@ if __name__ == '__main__':
 
         test_folds = config['test']['folds']
         model_file_names = config['test']['model_file_names']
+        tta_indices = config['test']['tta_indices']
 
         scores = []
+        curves = {dataset: [] for dataset in validation_datasets + ['global']}
 
         for fold, model_file_name in zip(test_folds, model_file_names):
 
             model = getattr(torch_modules, config['model']['model_class'])(**config['model']['model_args'])
-            model.load_state_dict(torch.load(model_directory / model_file_name))
+            model.load_state_dict(torch.load(model_directory / model_file_name, weights_only=True))
             model.to(device)
             model.eval()
 
-            validation_mask = df_train[fold] == 1
+            validation_mask = (df[f'fold{fold}'] == 1) & (df['dataset'].isin(validation_datasets))
             settings.logger.info(
                 f'''
                 Fold {fold}
@@ -444,15 +407,11 @@ if __name__ == '__main__':
                 '''
             )
 
-            validation_dataset = torch_datasets.VolumeClassificationDataset(
-                volume_paths=volume_paths[validation_mask],
-                spinal_canal_stenosis_targets=targets['spinal_canal_stenosis'][validation_mask],
-                neural_foraminal_narrowing_targets=targets['neural_foraminal_narrowing'][validation_mask],
-                subarticular_stenosis_targets=targets['subarticular_stenosis'][validation_mask],
-                spinal_canal_stenosis_sample_weights=sample_weights['spinal_canal_stenosis'][validation_mask],
-                neural_foraminal_narrowing_sample_weights=sample_weights['neural_foraminal_narrowing'][validation_mask],
-                subarticular_stenosis_sample_weights=sample_weights['subarticular_stenosis'][validation_mask],
-                transforms=None
+            validation_dataset = torch_datasets.TabularImageDataset(
+                image_paths=image_paths[validation_mask],
+                features=None,
+                targets=None,
+                transforms=image_transforms['inference']
             )
             validation_loader = DataLoader(
                 validation_dataset,
@@ -463,114 +422,59 @@ if __name__ == '__main__':
                 num_workers=config['training']['num_workers']
             )
 
-            progress_bar = tqdm(validation_loader)
+            validation_predictions = []
 
-            validation_spinal_canal_stenosis_predictions = []
-            validation_neural_foraminal_narrowing_predictions = []
-            validation_subarticular_stenosis_predictions = []
-
-            for step, (inputs, _, _) in enumerate(progress_bar):
+            for inputs in tqdm(validation_loader):
 
                 inputs = inputs.to(device)
+                batch_outputs = torch.zeros((inputs.shape[0], 1)).to(device)
 
-                with torch.no_grad():
-                    if amp:
-                        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
-                            spinal_canal_stenosis_outputs, neural_foraminal_narrowing_outputs, subarticular_stenosis_outputs = model(inputs)
-                    else:
-                        spinal_canal_stenosis_outputs, neural_foraminal_narrowing_outputs, subarticular_stenosis_outputs = model(inputs)
+                for tta_idx in tta_indices:
 
-                validation_spinal_canal_stenosis_predictions.append(spinal_canal_stenosis_outputs.detach().cpu())
-                validation_neural_foraminal_narrowing_predictions.append(neural_foraminal_narrowing_outputs.detach().cpu())
-                validation_subarticular_stenosis_predictions.append(subarticular_stenosis_outputs.detach().cpu())
+                    with torch.no_grad():
+                        if amp:
+                            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+                                outputs = model(transforms.get_tta_inputs(inputs, tta_idx=tta_idx))
+                        else:
+                            outputs = model(transforms.get_tta_inputs(inputs, tta_idx=tta_idx))
 
-            validation_spinal_canal_stenosis_predictions = torch.softmax(torch.cat(validation_spinal_canal_stenosis_predictions, dim=0).float(), dim=1).numpy()
-            validation_neural_foraminal_narrowing_predictions = torch.softmax(torch.cat(validation_neural_foraminal_narrowing_predictions, dim=0).float(), dim=1).numpy()
-            validation_subarticular_stenosis_predictions = torch.softmax(torch.cat(validation_subarticular_stenosis_predictions, dim=0).float(), dim=1).numpy()
+                    batch_outputs += outputs / len(tta_indices)
 
-            for level_idx, level in enumerate(levels):
-                validation_predictions = validation_spinal_canal_stenosis_predictions[:, :, level_idx]
-                for label, class_idx in label_mapping.items():
-                    df_train.loc[validation_mask, f'spinal_canal_stenosis_{level}_{label}_prediction'] = validation_predictions[:, class_idx]
+                validation_predictions.append(batch_outputs.detach().cpu())
 
-            for side_idx, side in enumerate(sides):
-                for level_idx, level in enumerate(levels):
-                    validation_predictions = validation_neural_foraminal_narrowing_predictions[:, :, (side_idx * 5) + level_idx]
-                    for label, class_idx in label_mapping.items():
-                        df_train.loc[validation_mask, f'{side}_neural_foraminal_narrowing_{level}_{label}_prediction'] = validation_predictions[:, class_idx]
+            validation_predictions = torch.sigmoid(torch.cat(validation_predictions).float()).numpy()
+            df.loc[validation_mask, 'prediction'] = validation_predictions
 
-            for side_idx, side in enumerate(sides):
-                for level_idx, level in enumerate(levels):
-                    validation_predictions = validation_subarticular_stenosis_predictions[:, :, (side_idx * 5) + level_idx]
-                    for label, class_idx in label_mapping.items():
-                        df_train.loc[validation_mask, f'{side}_subarticular_stenosis_{level}_{label}_prediction'] = validation_predictions[:, class_idx]
+            validation_scores = {}
+            if len(validation_datasets) > 1:
+                for dataset in validation_datasets:
+                    dataset_validation_mask = validation_mask & (df['dataset'] == dataset)
+                    dataset_validation_scores = metrics.classification_scores(
+                        y_true=df.loc[dataset_validation_mask, 'target'],
+                        y_pred=df.loc[dataset_validation_mask, 'prediction'],
+                    )
+                    dataset_validation_scores = {f'{dataset}_{k}': v for k, v in dataset_validation_scores.items()}
+                    validation_scores.update(dataset_validation_scores)
 
-            df_validation_study_predictions = df_train.loc[
-                validation_mask,
-                [column for column in df_train.columns if 'prediction' in column] + ['study_id']
-            ].groupby('study_id').mean().reset_index()
+                    dataset_validation_curves = metrics.classification_curves(
+                        y_true=df.loc[dataset_validation_mask, 'target'],
+                        y_pred=df.loc[dataset_validation_mask, 'prediction'],
+                    )
+                    curves[dataset].append(dataset_validation_curves)
 
-            for idx, row in df_validation_study_predictions.iterrows():
-                df_train_stack.loc[
-                    df_train_stack['study_id'] == row['study_id'],
-                    ['Normal/Mild_prediction', 'Moderate_prediction', 'Severe_prediction']
-                ] = row[1:].values.reshape(-1, 3)
-
-            df_validation_spinal_canal_stenosis = df_train_stack.loc[
-                (df_train_stack['study_id'].isin(df_validation_study_predictions['study_id'])) &
-                (df_train_stack['condition'] == 'spinal_canal_stenosis')
-            ]
-            validation_spinal_canal_stenosis_scores = metrics.classification_scores(
-                y_true=df_validation_spinal_canal_stenosis[['Normal/Mild', 'Moderate', 'Severe']].values,
-                y_pred=df_validation_spinal_canal_stenosis[['Normal/Mild_prediction', 'Moderate_prediction', 'Severe_prediction']].values,
-                sample_weights=df_validation_spinal_canal_stenosis['weight'].values,
+            global_validation_scores = metrics.classification_scores(
+                y_true=df.loc[validation_mask, 'target'],
+                y_pred=df.loc[validation_mask, 'prediction'],
             )
+            validation_scores.update(global_validation_scores)
+            settings.logger.info(f'{fold} Validation Scores\n{json.dumps(validation_scores, indent=2)}')
+            scores.append(validation_scores)
 
-            df_validation_neural_foraminal_narrowing = df_train_stack.loc[
-                (df_train_stack['study_id'].isin(df_validation_study_predictions['study_id'])) &
-                (df_train_stack['condition'] == 'neural_foraminal_narrowing')
-            ]
-            validation_neural_foraminal_narrowing_scores = metrics.classification_scores(
-                y_true=df_validation_neural_foraminal_narrowing[['Normal/Mild', 'Moderate', 'Severe']].values,
-                y_pred=df_validation_neural_foraminal_narrowing[['Normal/Mild_prediction', 'Moderate_prediction', 'Severe_prediction']].values,
-                sample_weights=df_validation_neural_foraminal_narrowing['weight'].values,
+            global_validation_curves = metrics.classification_curves(
+                y_true=df.loc[validation_mask, 'target'],
+                y_pred=df.loc[validation_mask, 'prediction'],
             )
-
-            df_validation_subarticular_stenosis = df_train_stack.loc[
-                (df_train_stack['study_id'].isin(df_validation_study_predictions['study_id'])) &
-                (df_train_stack['condition'] == 'subarticular_stenosis')
-            ]
-            validation_subarticular_stenosis_scores = metrics.classification_scores(
-                y_true=df_validation_subarticular_stenosis[['Normal/Mild', 'Moderate', 'Severe']].values,
-                y_pred=df_validation_subarticular_stenosis[['Normal/Mild_prediction', 'Moderate_prediction', 'Severe_prediction']].values,
-                sample_weights=df_validation_subarticular_stenosis['weight'].values,
-            )
-
-            df_validation_any_spinal = df_train_stack.loc[
-                (df_train_stack['study_id'].isin(df_validation_study_predictions['study_id'])) &
-                (df_train_stack['condition'] == 'spinal_canal_stenosis')
-            ].groupby('study_id')[['Severe', 'Severe_prediction', 'weight']].max().reset_index()
-            validation_any_spinal_scores = metrics.classification_scores(
-                y_true=df_validation_any_spinal['Severe'].values,
-                y_pred=df_validation_any_spinal['Severe_prediction'].values,
-                sample_weights=df_validation_any_spinal['weight'].values,
-            )
-
-            fold_scores = {}
-            validation_condition_scores = [
-                validation_spinal_canal_stenosis_scores, validation_neural_foraminal_narrowing_scores,
-                validation_subarticular_stenosis_scores, validation_any_spinal_scores
-            ]
-            for condition, condition_scores in zip(conditions + ['any_spinal'], validation_condition_scores):
-                for metric, score in condition_scores.items():
-                    fold_scores[f'{condition}_{metric}'] = score
-
-            validation_average_scores = pd.DataFrame(validation_condition_scores).mean().to_dict()
-            fold_scores['average_log_loss'] = validation_average_scores['log_loss']
-            fold_scores['average_sample_weighted_log_loss'] = validation_average_scores['sample_weighted_log_loss']
-
-            settings.logger.info(f'{fold} Validation Scores\n{json.dumps(fold_scores, indent=2)}')
-            scores.append(fold_scores)
+            curves['global'].append(global_validation_curves)
 
         scores = pd.DataFrame(scores)
         settings.logger.info(
@@ -582,49 +486,22 @@ if __name__ == '__main__':
             '''
         )
 
-        df_oof_spinal_canal_stenosis = df_train_stack.loc[df_train_stack['condition'] == 'spinal_canal_stenosis']
-        oof_spinal_canal_stenosis_scores = metrics.classification_scores(
-            y_true=df_oof_spinal_canal_stenosis[['Normal/Mild', 'Moderate', 'Severe']].values,
-            y_pred=df_oof_spinal_canal_stenosis[['Normal/Mild_prediction', 'Moderate_prediction', 'Severe_prediction']].values,
-            sample_weights=df_oof_spinal_canal_stenosis['weight'].values,
-        )
-
-        df_oof_neural_foraminal_narrowing = df_train_stack.loc[df_train_stack['condition'] == 'neural_foraminal_narrowing']
-        oof_neural_foraminal_narrowing_scores = metrics.classification_scores(
-            y_true=df_oof_neural_foraminal_narrowing[['Normal/Mild', 'Moderate', 'Severe']].values,
-            y_pred=df_oof_neural_foraminal_narrowing[['Normal/Mild_prediction', 'Moderate_prediction', 'Severe_prediction']].values,
-            sample_weights=df_oof_neural_foraminal_narrowing['weight'].values,
-        )
-
-        df_oof_subarticular_stenosis = df_train_stack.loc[df_train_stack['condition'] == 'subarticular_stenosis']
-        oof_subarticular_stenosis_scores = metrics.classification_scores(
-            y_true=df_oof_subarticular_stenosis[['Normal/Mild', 'Moderate', 'Severe']].values,
-            y_pred=df_oof_subarticular_stenosis[['Normal/Mild_prediction', 'Moderate_prediction', 'Severe_prediction']].values,
-            sample_weights=df_oof_subarticular_stenosis['weight'].values,
-        )
-
-        df_oof_any_spinal = df_train_stack.loc[
-            df_train_stack['condition'] == 'spinal_canal_stenosis'
-        ].groupby('study_id')[['Severe', 'Severe_prediction', 'weight']].max().reset_index()
-        oof_any_spinal_scores = metrics.classification_scores(
-            y_true=df_oof_any_spinal['Severe'].values,
-            y_pred=df_oof_any_spinal['Severe_prediction'].values,
-            sample_weights=df_oof_any_spinal['weight'].values,
-        )
-
         oof_scores = {}
-        oof_condition_scores = [
-            oof_spinal_canal_stenosis_scores, oof_neural_foraminal_narrowing_scores,
-            oof_subarticular_stenosis_scores, oof_any_spinal_scores
-        ]
-        for condition, condition_scores in zip(conditions + ['any_spinal'], oof_condition_scores):
-            for metric, score in condition_scores.items():
-                oof_scores[f'{condition}_{metric}'] = score
+        if len(validation_datasets) > 1:
+            for dataset in validation_datasets:
+                dataset_mask = df['dataset'] == dataset
+                dataset_oof_scores = metrics.classification_scores(
+                    y_true=df.loc[dataset_mask, 'target'],
+                    y_pred=df.loc[dataset_mask, 'prediction'],
+                )
+                dataset_oof_scores = {f'{dataset}_{k}': v for k, v in dataset_oof_scores.items()}
+                oof_scores.update(dataset_oof_scores)
 
-        oof_average_scores = pd.DataFrame(oof_condition_scores).mean().to_dict()
-        oof_scores['average_log_loss'] = oof_average_scores['log_loss']
-        oof_scores['average_sample_weighted_log_loss'] = oof_average_scores['sample_weighted_log_loss']
-
+        global_oof_scores = metrics.classification_scores(
+            y_true=df.loc[:, 'target'],
+            y_pred=df.loc[:, 'prediction'],
+        )
+        oof_scores.update(global_oof_scores)
         settings.logger.info(f'OOF Scores\n{json.dumps(oof_scores, indent=2)}')
 
         scores = pd.concat((
@@ -643,7 +520,56 @@ if __name__ == '__main__':
         )
         settings.logger.info(f'scores.png is saved to {model_directory}')
 
-        df_train_stack.to_csv(model_directory / 'oof_predictions.csv', index=False)
+        if len(validation_datasets) > 1:
+
+            for dataset in validation_datasets:
+                dataset_mask = df['dataset'] == dataset
+
+                visualization.visualize_roc_curves(
+                    roc_curves=[curve['roc'] for curve in curves[dataset]],
+                    title=f'{dataset} Validation ROC Curves',
+                    path=model_directory / f'roc_curves_{dataset}.png'
+                )
+                settings.logger.info(f'roc_curves_{dataset}.png is saved to {model_directory}')
+
+                visualization.visualize_pr_curves(
+                    pr_curves=[curve['pr'] for curve in curves[dataset]],
+                    title=f'{dataset} Validation PR Curves',
+                    path=model_directory / f'pr_curves_{dataset}.png'
+                )
+                settings.logger.info(f'pr_curves_{dataset}.png is saved to {model_directory}')
+
+                visualization.visualize_predictions(
+                    y_true=df.loc[dataset_mask, 'target'],
+                    y_pred=df.loc[dataset_mask, 'prediction'],
+                    title=f'{dataset} Predictions Histogram',
+                    path=model_directory / f'predictions_{dataset}.png'
+                )
+                settings.logger.info(f'predictions_{dataset}.png is saved to {model_directory}')
+
+        visualization.visualize_roc_curves(
+            roc_curves=[curve['roc'] for curve in curves['global']],
+            title='Global Validation ROC Curves',
+            path=model_directory / 'roc_curves_global.png'
+        )
+        settings.logger.info(f'roc_curves_global.png is saved to {model_directory}')
+
+        visualization.visualize_pr_curves(
+            pr_curves=[curve['pr'] for curve in curves['global']],
+            title='Global Validation PR Curves',
+            path=model_directory / 'pr_curves_global.png'
+        )
+        settings.logger.info(f'pr_curves_global.png is saved to {model_directory}')
+
+        visualization.visualize_predictions(
+            y_true=df.loc[:, 'target'],
+            y_pred=df.loc[:, 'prediction'],
+            title='Global Predictions Histogram',
+            path=model_directory / 'predictions_global.png'
+        )
+        settings.logger.info(f'predictions_global.png is saved to {model_directory}')
+
+        df.loc[:, ['isic_id', 'target', 'prediction']].to_csv(model_directory / 'oof_predictions.csv', index=False)
         settings.logger.info(f'oof_predictions.csv is saved to {model_directory}')
 
     else:
