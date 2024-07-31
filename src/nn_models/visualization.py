@@ -104,7 +104,7 @@ def visualize_scores(scores, title, path=None):
     fold_scores = scores.loc[scores['fold'] != 'OOF', metric_columns].agg(['mean', 'std']).T.fillna(0)
     oof_scores = scores.loc[scores['fold'] == 'OOF', metric_columns].reset_index(drop=True).T.rename(columns={0: 'score'})
 
-    fig, ax = plt.subplots(figsize=(32, 12))
+    fig, ax = plt.subplots(figsize=(32, 24))
     ax.barh(
         y=np.arange(fold_scores.shape[0]) - 0.2,
         width=fold_scores['mean'],
@@ -233,7 +233,6 @@ def visualize_pr_curves(pr_curves, title, path=None):
         Path of the output file or None (if path is None, plot is displayed with selected backend)
     """
 
-    n_scores = len(pr_curves)
     precisions_interpolated = []
     aucs = []
     mean_recall = np.linspace(0, 1, 100)
