@@ -23,7 +23,7 @@ class EfficientNet(nn.Module):
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
         self.head = nn.Linear(in_features=input_features, out_features=1, bias=True)
 
-    def forward(self, x):
+    def forward(self, x, extract_features=False):
 
         x = self.backbone.forward_features(x)
 
@@ -37,10 +37,18 @@ class EfficientNet(nn.Module):
                 F.adaptive_max_pool2d(x, output_size=(1, 1)).view(x.size(0), -1)
             ], dim=-1)
 
+        if extract_features:
+            features = x
+        else:
+            features = None
+
         x = self.dropout(x)
         output = self.head(x)
 
-        return output
+        if extract_features:
+            return output, features
+        else:
+            return output
 
 
 def load_timm_model(model_directory, model_file_names, device):
