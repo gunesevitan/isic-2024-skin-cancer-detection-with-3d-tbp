@@ -9,7 +9,8 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, SequentialSampler
+from exhaustive_weighted_random_sampler import ExhaustiveWeightedRandomSampler
 import torch.optim as optim
 
 sys.path.append('..')
@@ -209,7 +210,11 @@ if __name__ == '__main__':
 
             np.random.seed(42)
             training_positive_idx = np.where(training_mask & (df['target'] == 1))[0]
-            training_negative_idx = np.random.choice(np.where(training_mask & (df['target'] == 0))[0], negative_sample_count)
+            training_negative_idx = []
+            for dataset, count in negative_sample_count.items():
+                training_negative_idx_dataset = np.random.choice(np.where(training_mask & (df['target'] == 0) & (df['dataset'] == dataset))[0], count)
+                training_negative_idx.append(training_negative_idx_dataset)
+            training_negative_idx = np.concatenate(training_negative_idx)
             training_idx = np.concatenate((training_positive_idx, training_negative_idx))
 
             settings.logger.info(
@@ -220,6 +225,11 @@ if __name__ == '__main__':
                 '''
             )
 
+            weights = np.ones_like(training_idx).astype(int)
+            positive_weight = (df.loc[training_idx, 'target'] == 0).sum() / (df.loc[training_idx, 'target'] == 1).sum()
+            weights[np.where(df.loc[training_idx, 'target'] == 1)[0]] = positive_weight
+            training_sampler = ExhaustiveWeightedRandomSampler(weights.tolist(), num_samples=weights.shape[0])
+
             training_dataset = torch_datasets.TabularImageDataset(
                 image_paths=image_paths[training_idx],
                 features=None,
@@ -229,7 +239,7 @@ if __name__ == '__main__':
             training_loader = DataLoader(
                 training_dataset,
                 batch_size=config['training']['training_batch_size'],
-                sampler=RandomSampler(training_dataset, replacement=False),
+                sampler=training_sampler,
                 pin_memory=False,
                 drop_last=False,
                 num_workers=config['training']['num_workers']
@@ -392,6 +402,8 @@ if __name__ == '__main__':
         scores = []
         curves = {dataset: [] for dataset in validation_datasets + ['global']}
 
+        df['prediction'] = np.nan
+
         for fold, model_file_name in zip(test_folds, model_file_names):
 
             model = getattr(torch_modules, config['model']['model_class'])(**config['model']['model_args'])
@@ -423,27 +435,36 @@ if __name__ == '__main__':
             )
 
             validation_predictions = []
+            validation_features = []
 
             for inputs in tqdm(validation_loader):
 
                 inputs = inputs.to(device)
                 batch_outputs = torch.zeros((inputs.shape[0], 1)).to(device)
+                batch_features = torch.zeros((inputs.shape[0], 1280)).to(device)
 
                 for tta_idx in tta_indices:
 
                     with torch.no_grad():
                         if amp:
                             with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
-                                outputs = model(transforms.get_tta_inputs(inputs, tta_idx=tta_idx))
+                                outputs, features = model(transforms.get_tta_inputs(inputs, tta_idx=tta_idx), extract_features=True)
+
                         else:
-                            outputs = model(transforms.get_tta_inputs(inputs, tta_idx=tta_idx))
+                            outputs, features = model(transforms.get_tta_inputs(inputs, tta_idx=tta_idx), extract_features=True)
 
                     batch_outputs += outputs / len(tta_indices)
+                    batch_features += features / len(tta_indices)
 
-                validation_predictions.append(batch_outputs.detach().cpu())
+                validation_predictions.append(batch_outputs.cpu())
+                validation_features.append(batch_features.cpu())
 
             validation_predictions = torch.sigmoid(torch.cat(validation_predictions).float()).numpy()
             df.loc[validation_mask, 'prediction'] = validation_predictions
+            df.loc[validation_mask, 'prediction'] = df.loc[validation_mask, 'prediction'].rank(pct=True)
+
+            validation_features = torch.cat(validation_features).float().numpy()
+            df.loc[validation_mask, [f'image_feature_{i}' for i in range(validation_features.shape[1])]] = validation_features
 
             validation_scores = {}
             if len(validation_datasets) > 1:
@@ -497,9 +518,10 @@ if __name__ == '__main__':
                 dataset_oof_scores = {f'{dataset}_{k}': v for k, v in dataset_oof_scores.items()}
                 oof_scores.update(dataset_oof_scores)
 
+        oof_mask = df['prediction'].notna()
         global_oof_scores = metrics.classification_scores(
-            y_true=df.loc[:, 'target'],
-            y_pred=df.loc[:, 'prediction'],
+            y_true=df.loc[oof_mask, 'target'],
+            y_pred=df.loc[oof_mask, 'prediction'],
         )
         oof_scores.update(global_oof_scores)
         settings.logger.info(f'OOF Scores\n{json.dumps(oof_scores, indent=2)}')
@@ -562,15 +584,19 @@ if __name__ == '__main__':
         settings.logger.info(f'pr_curves_global.png is saved to {model_directory}')
 
         visualization.visualize_predictions(
-            y_true=df.loc[:, 'target'],
-            y_pred=df.loc[:, 'prediction'],
+            y_true=df.loc[oof_mask, 'target'],
+            y_pred=df.loc[oof_mask, 'prediction'],
             title='Global Predictions Histogram',
             path=model_directory / 'predictions_global.png'
         )
         settings.logger.info(f'predictions_global.png is saved to {model_directory}')
 
-        df.loc[:, ['isic_id', 'target', 'prediction']].to_csv(model_directory / 'oof_predictions.csv', index=False)
-        settings.logger.info(f'oof_predictions.csv is saved to {model_directory}')
+        df.loc[oof_mask, ['isic_id', 'target', 'prediction']].to_parquet(model_directory / 'oof_predictions.parquet')
+        settings.logger.info(f'oof_predictions.parquet is saved to {model_directory}')
+
+        image_feature_columns = [column for column in df.columns.tolist() if 'image_feature' in column]
+        df.loc[oof_mask, ['isic_id'] + image_feature_columns].to_parquet(model_directory / 'oof_features.parquet')
+        settings.logger.info(f'oof_features.parquet is saved to {model_directory}')
 
     else:
         raise ValueError(f'Invalid mode {args.mode}')
