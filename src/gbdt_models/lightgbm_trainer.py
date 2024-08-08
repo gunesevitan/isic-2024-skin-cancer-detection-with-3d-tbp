@@ -1,5 +1,6 @@
 import sys
 import argparse
+import warnings
 from pathlib import Path
 import yaml
 import json
@@ -48,6 +49,8 @@ def lightgbm_partial_auc_score(y_pred, training_dataset):
 
 if __name__ == '__main__':
 
+    warnings.filterwarnings('ignore')
+
     parser = argparse.ArgumentParser()
     parser.add_argument('model_directory', type=str)
     parser.add_argument('mode', type=str)
@@ -58,7 +61,7 @@ if __name__ == '__main__':
 
     config = yaml.load(open(model_directory / 'config.yaml'), Loader=yaml.FullLoader)
 
-    df = pd.read_parquet(settings.DATA / 'datasets' / 'isic-2024-metadata.parquet')
+    df = pd.read_csv(settings.DATA / 'isic-2024-challenge' / 'train-metadata.csv')
     df = df.merge(pd.read_csv(settings.DATA / 'folds.csv'), on='isic_id', how='left')
     settings.logger.info(f'Dataset Shape {df.shape} - Memory Usage: {df.memory_usage().sum() / 1024 ** 2:.2f} MB')
 
@@ -102,10 +105,14 @@ if __name__ == '__main__':
         for fold in folds:
 
             training_mask, validation_mask = df[f'fold{fold}'] == 0, df[f'fold{fold}'] == 1
+            training_positive_idx = np.where(training_mask & (df['target'] == 1))[0]
+            training_negative_idx = np.random.choice(np.where(training_mask & (df['target'] == 0))[0], 500)
+            training_idx = np.sort(np.concatenate((training_positive_idx, training_negative_idx)))
+
             settings.logger.info(
                 f'''
                 Fold: {fold} 
-                Training: ({training_mask.sum()}) - Target Mean: {df.loc[training_mask, target].mean():.4f}
+                Training: ({len(training_idx)}) - Target Mean: {df.loc[training_idx, target].mean():.4f}
                 Validation: ({validation_mask.sum()} - Target Mean: {df.loc[validation_mask, target].mean():.4f}
                 '''
             )
@@ -138,9 +145,8 @@ if __name__ == '__main__':
                 df_feature_importance_split[fold] += pd.Series((model.feature_importance(importance_type='split') / len(seeds)), index=features)
 
                 validation_predictions = model.predict(df.loc[validation_mask, features], num_iteration=config['fit_parameters']['boosting_rounds'])
-                df.loc[validation_mask, 'prediction'] += (validation_predictions / len(seeds))
+                df.loc[validation_mask, 'prediction'] += (pd.Series(validation_predictions).rank(pct=True).values / len(seeds))
 
-            df.loc[validation_mask, 'prediction'] = df.loc[validation_mask, 'prediction'].rank(pct=True)
             validation_scores = metrics.classification_scores(
                 y_true=df.loc[validation_mask, target],
                 y_pred=df.loc[validation_mask, 'prediction'],
