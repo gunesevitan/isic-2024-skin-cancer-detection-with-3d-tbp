@@ -20,7 +20,7 @@ def visualize_feature_importance(df_feature_importance, title, path=None):
         Path of the output file or None (if path is None, plot is displayed with selected backend)
     """
 
-    fig, ax = plt.subplots(figsize=(24, 32), dpi=100)
+    fig, ax = plt.subplots(figsize=(24, 48), dpi=100)
     ax.barh(
         range(len(df_feature_importance)),
         df_feature_importance['mean'],
