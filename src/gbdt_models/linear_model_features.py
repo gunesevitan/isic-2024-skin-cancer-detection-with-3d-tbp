@@ -1,9 +1,7 @@
 import sys
 import json
-import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.linear_model import LinearRegression
 
 sys.path.append('..')
 import settings
