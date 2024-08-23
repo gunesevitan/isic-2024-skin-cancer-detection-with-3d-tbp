@@ -67,9 +67,11 @@ if __name__ == '__main__':
 
     df = preprocessing.preprocess(
         df=df,
-        categorical_columns=config['preprocessing']['categorical_columns']
+        categorical_columns=config['preprocessing']['categorical_columns'],
+        encoder_directory=model_directory
     )
 
+    task_type = config['training']['task_type']
     target = config['training']['target']
     features = config['training']['features']
     categorical_features = config['training']['categorical_features']
@@ -78,7 +80,7 @@ if __name__ == '__main__':
 
     settings.logger.info(
         f'''
-        Running LightGBM trainer in {args.mode} mode
+        Running LightGBM trainer in {args.mode} mode ({task_type} task type)
         Dataset Shape: {df.shape}
         Folds: {folds}
         Features: {json.dumps(features, indent=2)}
@@ -104,25 +106,40 @@ if __name__ == '__main__':
 
         for fold in folds:
 
-            training_mask, validation_mask = df[f'fold{fold}'] == 0, df[f'fold{fold}'] == 1
-            training_positive_idx = np.where(training_mask & (df['target'] == 1))[0]
-            training_negative_idx = np.random.choice(np.where(training_mask & (df['target'] == 0))[0], 500)
-            training_idx = np.sort(np.concatenate((training_positive_idx, training_negative_idx)))
+            training_mask = (df[f'fold{fold}'] == 0) & (df['tbp_lv_dnn_lesion_confidence'] > 0.0)
+            validation_mask = df[f'fold{fold}'] == 1
 
             settings.logger.info(
                 f'''
                 Fold: {fold} 
-                Training: ({len(training_idx)}) - Target Mean: {df.loc[training_idx, target].mean():.4f}
-                Validation: ({validation_mask.sum()} - Target Mean: {df.loc[validation_mask, target].mean():.4f}
+                Training: ({training_mask.sum()}) - Target Mean: {df.loc[training_mask, target].mean():.4f}
+                Validation: ({validation_mask.sum()}) - Target Mean: {df.loc[validation_mask, target].mean():.4f}
                 '''
             )
 
             df.loc[validation_mask, 'prediction'] = 0
 
+            if task_type == 'ranking':
+                training_group = np.unique(df.loc[training_mask, 'patient_id'], return_counts=True)[1]
+                validation_group = np.unique(df.loc[validation_mask, 'patient_id'], return_counts=True)[1]
+            else:
+                training_group = None
+                validation_group = None
+
             for seed in seeds:
 
-                training_dataset = lgb.Dataset(df.loc[training_mask, features], label=df.loc[training_mask, target], categorical_feature=categorical_features)
-                validation_dataset = lgb.Dataset(df.loc[validation_mask, features], label=df.loc[validation_mask, target], categorical_feature=categorical_features)
+                training_dataset = lgb.Dataset(
+                    df.loc[training_mask, features],
+                    label=df.loc[training_mask, target],
+                    categorical_feature=categorical_features,
+                    group=training_group
+                )
+                validation_dataset = lgb.Dataset(
+                    df.loc[validation_mask, features],
+                    label=df.loc[validation_mask, target],
+                    categorical_feature=categorical_features,
+                    group=validation_group
+                )
 
                 config['model_parameters']['seed'] = seed
                 config['model_parameters']['feature_fraction_seed'] = seed
@@ -145,17 +162,21 @@ if __name__ == '__main__':
                 df_feature_importance_split[fold] += pd.Series((model.feature_importance(importance_type='split') / len(seeds)), index=features)
 
                 validation_predictions = model.predict(df.loc[validation_mask, features], num_iteration=config['fit_parameters']['boosting_rounds'])
+
+                if task_type == 'multiclass':
+                    validation_predictions = validation_predictions[:, 1]
+
                 df.loc[validation_mask, 'prediction'] += (pd.Series(validation_predictions).rank(pct=True).values / len(seeds))
 
             validation_scores = metrics.classification_scores(
-                y_true=df.loc[validation_mask, target],
+                y_true=df.loc[validation_mask, 'target'],
                 y_pred=df.loc[validation_mask, 'prediction'],
             )
             settings.logger.info(f'Fold: {fold} - Validation Scores: {json.dumps(validation_scores, indent=2)}')
             scores.append(validation_scores)
 
             validation_curves = metrics.classification_curves(
-                y_true=df.loc[validation_mask, target],
+                y_true=df.loc[validation_mask, 'target'],
                 y_pred=df.loc[validation_mask, 'prediction'],
             )
             curves.append(validation_curves)
@@ -172,7 +193,7 @@ if __name__ == '__main__':
 
         oof_mask = df['prediction'].notna()
         oof_scores = metrics.classification_scores(
-            y_true=df.loc[oof_mask, target],
+            y_true=df.loc[oof_mask, 'target'],
             y_pred=df.loc[oof_mask, 'prediction'],
         )
         settings.logger.info(f'OOF Scores: {json.dumps(oof_scores, indent=2)}')
@@ -206,7 +227,7 @@ if __name__ == '__main__':
         )
 
         visualization.visualize_predictions(
-            y_true=df[target],
+            y_true=df['target'],
             y_pred=df['prediction'],
             title='LightGBM Predictions Histogram',
             path=model_directory / 'predictions.png'
