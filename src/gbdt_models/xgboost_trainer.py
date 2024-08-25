@@ -92,13 +92,6 @@ if __name__ == '__main__':
 
             df.loc[validation_mask, 'prediction'] = 0
 
-            if task_type == 'ranking':
-                training_group = np.unique(df.loc[training_mask, 'patient_id'], return_counts=True)[1]
-                validation_group = np.unique(df.loc[validation_mask, 'patient_id'], return_counts=True)[1]
-            else:
-                training_group = None
-                validation_group = None
-
             for seed in seeds:
 
                 training_dataset = xgb.DMatrix(df.loc[training_mask, features], label=df.loc[training_mask, target])
