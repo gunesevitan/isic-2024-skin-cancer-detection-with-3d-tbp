@@ -67,7 +67,7 @@ if __name__ == '__main__':
             for columns, column_group_name in zip(column_groups, column_group_names):
 
                 min_max_scaler = MinMaxScaler()
-                dbscan = DBSCAN(eps=0.5, min_samples=1)
+                dbscan = DBSCAN(eps=0.4, min_samples=1)
                 dbscan.fit(min_max_scaler.fit_transform(df_group[columns]))
                 df.loc[idx, f'patient_site_{column_group_name}_cluster'] = dbscan.labels_
 
