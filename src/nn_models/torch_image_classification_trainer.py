@@ -461,7 +461,7 @@ if __name__ == '__main__':
 
             validation_predictions = torch.sigmoid(torch.cat(validation_predictions).float()).numpy()
             df.loc[validation_mask, 'prediction'] = validation_predictions
-            df.loc[validation_mask, 'prediction'] = df.loc[validation_mask, 'prediction'].rank(pct=True)
+            df.loc[validation_mask, 'prediction_rank'] = df.loc[validation_mask, 'prediction'].rank(pct=True)
 
             validation_features = torch.cat(validation_features).float().numpy()
             df.loc[validation_mask, [f'image_feature_{i}' for i in range(validation_features.shape[1])]] = validation_features
@@ -472,20 +472,20 @@ if __name__ == '__main__':
                     dataset_validation_mask = validation_mask & (df['dataset'] == dataset)
                     dataset_validation_scores = metrics.classification_scores(
                         y_true=df.loc[dataset_validation_mask, 'target'],
-                        y_pred=df.loc[dataset_validation_mask, 'prediction'],
+                        y_pred=df.loc[dataset_validation_mask, 'prediction_rank'],
                     )
                     dataset_validation_scores = {f'{dataset}_{k}': v for k, v in dataset_validation_scores.items()}
                     validation_scores.update(dataset_validation_scores)
 
                     dataset_validation_curves = metrics.classification_curves(
                         y_true=df.loc[dataset_validation_mask, 'target'],
-                        y_pred=df.loc[dataset_validation_mask, 'prediction'],
+                        y_pred=df.loc[dataset_validation_mask, 'prediction_rank'],
                     )
                     curves[dataset].append(dataset_validation_curves)
 
             global_validation_scores = metrics.classification_scores(
                 y_true=df.loc[validation_mask, 'target'],
-                y_pred=df.loc[validation_mask, 'prediction'],
+                y_pred=df.loc[validation_mask, 'prediction_rank'],
             )
             validation_scores.update(global_validation_scores)
             settings.logger.info(f'{fold} Validation Scores\n{json.dumps(validation_scores, indent=2)}')
@@ -493,7 +493,7 @@ if __name__ == '__main__':
 
             global_validation_curves = metrics.classification_curves(
                 y_true=df.loc[validation_mask, 'target'],
-                y_pred=df.loc[validation_mask, 'prediction'],
+                y_pred=df.loc[validation_mask, 'prediction_rank'],
             )
             curves['global'].append(global_validation_curves)
 
@@ -513,15 +513,15 @@ if __name__ == '__main__':
                 dataset_mask = df['dataset'] == dataset
                 dataset_oof_scores = metrics.classification_scores(
                     y_true=df.loc[dataset_mask, 'target'],
-                    y_pred=df.loc[dataset_mask, 'prediction'],
+                    y_pred=df.loc[dataset_mask, 'prediction_rank'],
                 )
                 dataset_oof_scores = {f'{dataset}_{k}': v for k, v in dataset_oof_scores.items()}
                 oof_scores.update(dataset_oof_scores)
 
-        oof_mask = df['prediction'].notna()
+        oof_mask = df['prediction_rank'].notna()
         global_oof_scores = metrics.classification_scores(
             y_true=df.loc[oof_mask, 'target'],
-            y_pred=df.loc[oof_mask, 'prediction'],
+            y_pred=df.loc[oof_mask, 'prediction_rank'],
         )
         oof_scores.update(global_oof_scores)
         settings.logger.info(f'OOF Scores\n{json.dumps(oof_scores, indent=2)}')
@@ -563,7 +563,7 @@ if __name__ == '__main__':
 
                 visualization.visualize_predictions(
                     y_true=df.loc[dataset_mask, 'target'],
-                    y_pred=df.loc[dataset_mask, 'prediction'],
+                    y_pred=df.loc[dataset_mask, 'prediction_rank'],
                     title=f'{dataset} Predictions Histogram',
                     path=model_directory / f'predictions_{dataset}.png'
                 )
@@ -585,18 +585,14 @@ if __name__ == '__main__':
 
         visualization.visualize_predictions(
             y_true=df.loc[oof_mask, 'target'],
-            y_pred=df.loc[oof_mask, 'prediction'],
+            y_pred=df.loc[oof_mask, 'prediction_rank'],
             title='Global Predictions Histogram',
             path=model_directory / 'predictions_global.png'
         )
         settings.logger.info(f'predictions_global.png is saved to {model_directory}')
 
-        df.loc[oof_mask, ['isic_id', 'target', 'prediction']].to_parquet(model_directory / 'oof_predictions.parquet')
+        df.loc[oof_mask, ['isic_id', 'prediction', 'prediction_rank']].to_parquet(model_directory / 'oof_predictions.parquet')
         settings.logger.info(f'oof_predictions.parquet is saved to {model_directory}')
-
-        image_feature_columns = [column for column in df.columns.tolist() if 'image_feature' in column]
-        df.loc[oof_mask, ['isic_id'] + image_feature_columns].to_parquet(model_directory / 'oof_features.parquet')
-        settings.logger.info(f'oof_features.parquet is saved to {model_directory}')
 
     else:
         raise ValueError(f'Invalid mode {args.mode}')
