@@ -29,7 +29,7 @@ if __name__ == '__main__':
     image_embeddings_pca = pca.fit_transform(image_embeddings)
 
     with open(settings.MODELS / 'encoders' / 'image_embeddings_pca.pickle', mode='wb') as f:
-        pickle.dump(image_embeddings_pca, f)
+        pickle.dump(pca, f)
 
     image_embeddings_features = pd.DataFrame(image_embeddings_pca, columns=[f'image_embedding_{i}' for i in range(1, image_embeddings_pca.shape[1] + 1)])
 
@@ -40,8 +40,6 @@ if __name__ == '__main__':
     image_embeddings_features['image_embedding_max'] = np.max(image_embeddings, axis=1)
 
     image_embeddings_features.to_parquet(settings.DATA / 'image_embeddings_features.parquet')
-
-    patient_ids = np.unique(df['patient_id'].values)
 
     image_embeddings = torch.as_tensor(image_embeddings, device='cuda')
 
