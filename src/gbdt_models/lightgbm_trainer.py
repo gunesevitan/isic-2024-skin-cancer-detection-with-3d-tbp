@@ -68,7 +68,8 @@ if __name__ == '__main__':
     df = preprocessing.preprocess(
         df=df,
         categorical_columns=config['preprocessing']['categorical_columns'],
-        encoder_directory=model_directory
+        encoder_directory=model_directory,
+        data_directory=settings.DATA
     )
 
     task_type = config['training']['task_type']
