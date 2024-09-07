@@ -1,0 +1,277 @@
+preprocessing:
+  categorical_columns: [
+    'sex', 'anatom_site_general', 'tbp_tile_type',
+    'tbp_lv_location', 'tbp_lv_location_simple',
+    'attribution'
+  ]
+
+training:
+  task_type: 'multiclass'
+  target: 'target_multiclass'
+  features: [
+    # Raw general features
+    'age_approx', 'sex', 'anatom_site_general', 'tbp_lv_location', 'attribution',
+
+    # Raw color features
+    'tbp_lv_C', 'tbp_lv_Cext',
+    'tbp_lv_H', 'tbp_lv_Hext',
+    'tbp_lv_deltaLBnorm',
+    'tbp_lv_stdL', 'tbp_lv_stdLExt',
+    'tbp_lv_color_std_mean', 'tbp_lv_radial_color_std_max', 'tbp_lv_norm_color',
+
+    # Raw shape features
+    'clin_size_long_diam_mm', 'tbp_lv_minorAxisMM', 'tbp_lv_areaMM2', 'tbp_lv_perimeterMM',
+    'tbp_lv_area_perim_ratio', 'tbp_lv_symm_2axis', 'tbp_lv_symm_2axis_angle',
+    'tbp_lv_norm_border', 'tbp_lv_eccentricity',
+
+    # Color interactions for lesion
+    'lesion_ab_ratio', 'lesion_ab_difference',
+    'lesion_ac_ratio', 'lesion_ac_difference',
+    'lesion_ah_ratio', 'lesion_ah_difference',
+    'lesion_al_ratio', 'lesion_al_difference',
+    'lesion_bc_ratio', 'lesion_bc_difference',
+    'lesion_bh_ratio', 'lesion_bh_difference',
+    'lesion_bl_ratio', 'lesion_bl_difference',
+    'lesion_ch_ratio', 'lesion_ch_difference',
+    'lesion_cl_ratio', 'lesion_cl_difference',
+    'lesion_hl_ratio', 'lesion_hl_difference',
+
+    # Color interactions for outside
+    'outside_ab_ratio', 'outside_ab_difference',
+    'outside_ac_ratio', 'outside_ac_difference',
+    'outside_ah_ratio', 'outside_ah_difference',
+    'outside_al_ratio', 'outside_al_difference',
+    'outside_bc_ratio', 'outside_bc_difference',
+    'outside_bh_ratio', 'outside_bh_difference',
+    'outside_bl_ratio', 'outside_bl_difference',
+    'outside_ch_ratio', 'outside_ch_difference',
+    'outside_cl_ratio', 'outside_cl_difference',
+    'outside_hl_ratio', 'outside_hl_difference',
+
+    # Color interactions interactions for lesion and outside
+    'lesion_outside_ab_difference_ratio',
+    'lesion_outside_ac_difference_ratio',
+    'lesion_outside_ah_difference_ratio',
+    'lesion_outside_al_difference_ratio',
+    'lesion_outside_bc_difference_ratio',
+    'lesion_outside_bh_difference_ratio',
+    'lesion_outside_bl_difference_ratio',
+    'lesion_outside_ch_difference_ratio',
+    'lesion_outside_cl_difference_ratio',
+    'lesion_outside_hl_difference_ratio',
+
+    # Color interactions for lesion and outside
+    'a_lesion_outside_ratio', 'a_lesion_outside_difference',
+    'b_lesion_outside_ratio', 'b_lesion_outside_difference',
+    'c_lesion_outside_ratio', 'c_lesion_outside_difference',
+    'l_lesion_outside_ratio', 'l_lesion_outside_difference',
+    'h_lesion_outside_ratio', 'h_lesion_outside_difference',
+    'stdl_lesion_outside_ratio', 'stdl_lesion_outside_difference',
+
+    # Shape interactions
+    'lesion_diameter_ratio', 'lesion_diameter_difference', 'lesion_diameter_mean',
+    'lesion_area_max_diameter_squared_ratio', 'lesion_area_max_diameter_squared_difference',
+    'lesion_area_perimeter_squared_ratio', 'lesion_max_diameter_perimeter_ratio',
+
+    # Coordinate interactions
+    'lesion_distance_to_origin',
+    'lesion_angle_xy', 'lesion_angle_xz', 'lesion_angle_yz',
+
+    # Patient aggregations
+    'patient_visit_id', 'patient_visit_count',
+    'patient_visit_lesion_count', 'patient_visit_site_lesion_count',
+    'patient_lesion_count',
+    'patient_tbp_lv_L_std', 'patient_tbp_lv_L_min',
+    'patient_tbp_lv_H_skew', 'patient_tbp_lv_H_std',
+    'patient_tbp_lv_Hext_skew',
+
+    # Patient site aggregations
+    'patient_site_tbp_lv_C_mean', 'patient_site_tbp_lv_Cext_mean',
+    'patient_site_tbp_lv_C_std', 'patient_site_tbp_lv_Cext_std',
+    'patient_site_tbp_lv_C_skew', 'patient_site_tbp_lv_Cext_skew',
+    'patient_site_tbp_lv_color_std_mean_median', 'patient_site_tbp_lv_radial_color_std_max_median',
+    'patient_site_tbp_lv_norm_color_median',
+    'patient_site_tbp_lv_minorAxisMM_mean_ratio', 'patient_site_tbp_lv_minorAxisMM_mean_difference',
+
+    # Patient raw general features ranks
+    'patient_tbp_lv_nevi_confidence_rank',
+
+    # Patient raw color features ranks
+    'patient_tbp_lv_A_rank', 'patient_tbp_lv_Aext_rank',
+    'patient_tbp_lv_B_rank', 'patient_tbp_lv_Bext_rank',
+    'patient_tbp_lv_C_rank', 'patient_tbp_lv_Cext_rank',
+    'patient_tbp_lv_H_rank', 'patient_tbp_lv_Hext_rank',
+    'patient_tbp_lv_L_rank', 'patient_tbp_lv_Lext_rank',
+    'patient_tbp_lv_stdL_rank', 'patient_tbp_lv_stdLExt_rank',
+    'patient_tbp_lv_deltaA_rank', 'patient_tbp_lv_deltaB_rank', 'patient_tbp_lv_deltaL_rank', 'patient_tbp_lv_deltaLBnorm_rank',
+    'patient_tbp_lv_color_std_mean_rank', 'patient_tbp_lv_radial_color_std_max_rank', 'patient_tbp_lv_norm_color_rank',
+
+    # Patient raw coordinate features ranks
+    'patient_tbp_lv_x_rank', 'patient_tbp_lv_y_rank', 'patient_tbp_lv_z_rank',
+
+    # Patient shape interaction features ranks
+    'patient_lesion_area_max_diameter_squared_ratio_rank', 'patient_lesion_area_max_diameter_squared_difference_rank',
+    'patient_lesion_area_min_diameter_squared_ratio_rank', 'patient_lesion_area_min_diameter_squared_difference_rank',
+    'patient_lesion_area_perimeter_squared_ratio_rank', 'patient_lesion_area_perimeter_squared_difference_rank',
+    'patient_lesion_circularity_rank', 'patient_lesion_shape_index_rank',
+
+    # Patient irregularity aggregation ranks
+    'patient_border_irregularity_mean_rank', 'patient_color_irregularity_mean_rank',
+
+    # Patient color interactions for lesion ranks
+    'patient_lesion_ac_ratio_rank', 'patient_lesion_ac_difference_rank',
+    'patient_lesion_bc_ratio_rank', 'patient_lesion_bc_difference_rank',
+    'patient_lesion_ch_ratio_rank', 'patient_lesion_ch_difference_rank',
+    'patient_lesion_cl_ratio_rank', 'patient_lesion_cl_difference_rank',
+
+    # Patient color interactions for outside ranks
+    'patient_outside_ac_ratio_rank', 'patient_outside_ac_difference_rank',
+    'patient_outside_bc_ratio_rank', 'patient_outside_bc_difference_rank',
+    'patient_outside_ch_ratio_rank', 'patient_outside_ch_difference_rank',
+    'patient_outside_cl_ratio_rank', 'patient_outside_cl_difference_rank',
+
+    # Patient color interactions interactions for lesion and outside ranks
+    'patient_lesion_outside_ab_difference_ratio_rank',
+    'patient_lesion_outside_ac_difference_ratio_rank',
+    'patient_lesion_outside_bc_difference_ratio_rank',
+    'patient_lesion_outside_bh_difference_ratio_rank',
+    'patient_lesion_outside_bl_difference_ratio_rank',
+    'patient_lesion_outside_cl_difference_ratio_rank',
+    'patient_lesion_outside_hl_difference_ratio_rank',
+
+    # Patient site raw general features ranks
+    'patient_site_tbp_lv_nevi_confidence_rank',
+
+    # Patient site raw color features ranks
+    'patient_site_tbp_lv_A_rank', 'patient_site_tbp_lv_Aext_rank',
+    'patient_site_tbp_lv_B_rank', 'patient_site_tbp_lv_Bext_rank',
+    'patient_site_tbp_lv_C_rank', 'patient_site_tbp_lv_Cext_rank',
+    'patient_site_tbp_lv_H_rank', 'patient_site_tbp_lv_Hext_rank',
+    'patient_site_tbp_lv_L_rank', 'patient_site_tbp_lv_Lext_rank',
+    'patient_site_tbp_lv_stdL_rank', 'patient_site_tbp_lv_stdLExt_rank',
+    'patient_site_tbp_lv_deltaA_rank', 'patient_site_tbp_lv_deltaB_rank', 'patient_site_tbp_lv_deltaL_rank',
+    'patient_site_tbp_lv_deltaLBnorm_rank',
+    'patient_site_tbp_lv_color_std_mean_rank', 'patient_site_tbp_lv_radial_color_std_max_rank',
+    'patient_site_tbp_lv_norm_color_rank',
+
+    # Patient site raw shape features ranks
+    'patient_site_clin_size_long_diam_mm_rank', 'patient_site_tbp_lv_minorAxisMM_rank',
+    'patient_site_tbp_lv_areaMM2_rank', 'patient_site_tbp_lv_perimeterMM_rank',
+    'patient_site_tbp_lv_area_perim_ratio_rank', 'patient_site_tbp_lv_symm_2axis_rank',
+    'patient_site_tbp_lv_symm_2axis_angle_rank',
+    'patient_site_tbp_lv_norm_border_rank', 'patient_site_tbp_lv_eccentricity_rank',
+
+    # Patient site raw coordinate features ranks
+    'patient_site_tbp_lv_x_rank', 'patient_site_tbp_lv_y_rank', 'patient_site_tbp_lv_z_rank',
+
+    # Patient anchor comparison features
+    'tbp_lv_B_clin_size_long_diam_mm_anchor_max_ratio', 'tbp_lv_Bext_clin_size_long_diam_mm_anchor_max_ratio',
+    'tbp_lv_C_clin_size_long_diam_mm_anchor_max_ratio', 'tbp_lv_Cext_clin_size_long_diam_mm_anchor_max_ratio',
+    'tbp_lv_H_clin_size_long_diam_mm_anchor_max_ratio', 'tbp_lv_Hext_clin_size_long_diam_mm_anchor_max_ratio',
+    'tbp_lv_B_clin_size_long_diam_mm_anchor_min_ratio', 'tbp_lv_Bext_clin_size_long_diam_mm_anchor_min_ratio',
+    'tbp_lv_C_clin_size_long_diam_mm_anchor_min_ratio', 'tbp_lv_Cext_clin_size_long_diam_mm_anchor_min_ratio',
+    'tbp_lv_H_clin_size_long_diam_mm_anchor_min_ratio', 'tbp_lv_Hext_clin_size_long_diam_mm_anchor_min_ratio',
+
+    # Patient cluster features
+    'patient_color_cluster_count', 'patient_color_cluster_ratio', 'patient_color_cluster_difference',
+    'patient_lesion_color_cluster_count', 'patient_lesion_color_cluster_ratio', 'patient_lesion_color_cluster_difference',
+    'patient_outside_color_cluster_count', 'patient_outside_color_cluster_ratio', 'patient_outside_color_cluster_difference',
+    'patient_shape_cluster_count', 'patient_shape_cluster_ratio', 'patient_shape_cluster_difference',
+    'patient_location_cluster_count', 'patient_location_cluster_ratio', 'patient_location_cluster_difference',
+
+    # Patient location cluster features
+    'patient_location_color_cluster_ratio', 'patient_location_color_cluster_difference',
+    'patient_location_shape_cluster_ratio', 'patient_location_shape_cluster_difference',
+    'patient_location_location_cluster_ratio', 'patient_location_location_cluster_difference',
+
+    # Patient location simple cluster features
+    'patient_location_simple_color_cluster_ratio', 'patient_location_simple_color_cluster_difference',
+    'patient_location_simple_shape_cluster_ratio', 'patient_location_simple_shape_cluster_difference',
+    'patient_location_simple_location_cluster_ratio', 'patient_location_simple_location_cluster_difference',
+
+    # Patient distance features
+    'patient_color_std_distance',
+    'patient_color_min_distance', 'patient_color_max_distance',
+    'patient_site_color_min_distance', 'patient_site_color_max_distance',
+
+    'patient_shape_std_distance',
+    'patient_shape_min_distance', 'patient_shape_max_distance',
+    'patient_site_shape_min_distance', 'patient_site_shape_max_distance',
+
+    'patient_location_std_distance',
+    'patient_location_min_distance', 'patient_location_max_distance',
+    'patient_site_location_min_distance', 'patient_site_location_max_distance',
+
+    'patient_tbp_lv_A_min_location_distance_lesion_ratio', 'patient_tbp_lv_Aext_min_location_distance_lesion_ratio',
+    'patient_tbp_lv_B_min_location_distance_lesion_ratio', 'patient_tbp_lv_Bext_min_location_distance_lesion_ratio',
+    'patient_tbp_lv_C_min_location_distance_lesion_ratio', 'patient_tbp_lv_Cext_min_location_distance_lesion_ratio',
+    'patient_tbp_lv_H_min_location_distance_lesion_ratio', 'patient_tbp_lv_Hext_min_location_distance_lesion_ratio',
+    'patient_tbp_lv_L_min_location_distance_lesion_ratio', 'patient_tbp_lv_Lext_min_location_distance_lesion_ratio',
+    'patient_tbp_lv_A_max_location_distance_lesion_ratio', 'patient_tbp_lv_Aext_max_location_distance_lesion_ratio',
+    'patient_tbp_lv_B_max_location_distance_lesion_ratio', 'patient_tbp_lv_Bext_max_location_distance_lesion_ratio',
+    'patient_tbp_lv_C_max_location_distance_lesion_ratio', 'patient_tbp_lv_Cext_max_location_distance_lesion_ratio',
+    'patient_tbp_lv_H_max_location_distance_lesion_ratio', 'patient_tbp_lv_Hext_max_location_distance_lesion_ratio',
+    'patient_tbp_lv_L_max_location_distance_lesion_ratio', 'patient_tbp_lv_Lext_max_location_distance_lesion_ratio',
+
+    'patient_tbp_lv_A_min_location_distance_lesion_difference', 'patient_tbp_lv_Aext_min_location_distance_lesion_difference',
+    'patient_tbp_lv_B_min_location_distance_lesion_difference', 'patient_tbp_lv_Bext_min_location_distance_lesion_difference',
+    'patient_tbp_lv_L_min_location_distance_lesion_difference', 'patient_tbp_lv_Lext_min_location_distance_lesion_difference',
+    'patient_tbp_lv_A_max_location_distance_lesion_difference', 'patient_tbp_lv_Aext_max_location_distance_lesion_difference',
+    'patient_tbp_lv_B_max_location_distance_lesion_difference', 'patient_tbp_lv_Bext_max_location_distance_lesion_difference',
+    'patient_tbp_lv_L_max_location_distance_lesion_difference', 'patient_tbp_lv_Lext_max_location_distance_lesion_difference',
+
+    'patient_location_tbp_lv_A_min_location_distance_lesion_ratio', 'patient_location_tbp_lv_Aext_min_location_distance_lesion_ratio',
+    'patient_location_tbp_lv_B_min_location_distance_lesion_ratio', 'patient_location_tbp_lv_Bext_min_location_distance_lesion_ratio',
+    'patient_location_tbp_lv_C_min_location_distance_lesion_ratio', 'patient_location_tbp_lv_Cext_min_location_distance_lesion_ratio',
+    'patient_location_tbp_lv_H_min_location_distance_lesion_ratio', 'patient_location_tbp_lv_Hext_min_location_distance_lesion_ratio',
+    'patient_location_tbp_lv_A_max_location_distance_lesion_ratio', 'patient_location_tbp_lv_Aext_max_location_distance_lesion_ratio',
+    'patient_location_tbp_lv_B_max_location_distance_lesion_ratio', 'patient_location_tbp_lv_Bext_max_location_distance_lesion_ratio',
+    'patient_location_tbp_lv_H_max_location_distance_lesion_ratio', 'patient_location_tbp_lv_Hext_max_location_distance_lesion_ratio',
+
+    'patient_location_simple_tbp_lv_B_min_location_distance_lesion_ratio', 'patient_location_simple_tbp_lv_Bext_min_location_distance_lesion_ratio',
+    'patient_location_simple_tbp_lv_L_min_location_distance_lesion_ratio', 'patient_location_simple_tbp_lv_Lext_min_location_distance_lesion_ratio',
+    'patient_location_simple_tbp_lv_B_max_location_distance_lesion_ratio', 'patient_location_simple_tbp_lv_Bext_max_location_distance_lesion_ratio',
+    'patient_location_simple_tbp_lv_L_max_location_distance_lesion_ratio', 'patient_location_simple_tbp_lv_Lext_max_location_distance_lesion_ratio',
+
+  ]
+  categorical_features: [
+    'sex', 'anatom_site_general', 'tbp_lv_location', 'patient_visit_id', 'attribution'
+  ]
+  folds: [1, 2, 3, 4, 5]
+  seeds: [42, 0, 1337, 1962022, 721991, 1, 2, 3, 4, 5]
+
+model_parameters:
+  num_leaves: 128
+  learning_rate: 0.01
+  bagging_fraction: 0.7
+  bagging_freq: 1
+  feature_fraction: 0.4
+  feature_fraction_bynode: 0.8
+  min_data_in_leaf: 100
+  min_gain_to_split: 0.
+  lambda_l1: 0.
+  lambda_l2: 0.
+  max_bin: 255
+  min_data_in_bin: 3
+  max_depth: -1
+  min_data_per_group: 100
+  max_cat_threshold: 32
+  cat_l2: 10
+  cat_smooth: 10
+  max_cat_to_onehot: 32
+  boost_from_average: True
+  objective: 'multiclass'
+  num_class: 3
+  metric: 'multi_logloss'
+  seed: null
+  feature_fraction_seed: null
+  bagging_seed: null
+  drop_seed: null
+  data_random_seed: null
+  boosting_type: 'gbdt'
+  verbose: 1
+  n_jobs: 16
+
+fit_parameters:
+  boosting_rounds: 600
+  log_evaluation: 100

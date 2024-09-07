@@ -1,0 +1,81 @@
+dataset:
+  training: [
+    'isic_2024'
+  ]
+  validation: [
+    'isic_2024',
+  ]
+  negative_sample_count:
+    isic_2024: 5000
+
+model:
+  model_class: 'EfficientNet'
+  model_args:
+    model_name: 'efficientnet_b0'
+    pretrained: True
+    backbone_args:
+      in_chans: 3
+      drop_rate: 0.1
+      drop_path_rate: 0.1
+    pooling_type: 'avg'
+    dropout_rate: 0.0
+  model_checkpoint_path: null
+
+training:
+  folds: [1, 2, 3, 4, 5]
+  loss_function: 'BCEWithLogitsLoss'
+  loss_function_args: {}
+  training_batch_size: 128
+  test_batch_size: 256
+  num_workers: 16
+  random_state: 42
+  deterministic_cudnn: False
+  device: 'cuda'
+  optimizer: 'AdamW'
+  optimizer_args:
+    lr: 0.001
+    betas: [0.9, 0.999]
+    weight_decay: 0.01
+  lr_scheduler: 'OneCycleLR'
+  lr_scheduler_args:
+    max_lr: 0.001
+    total_steps: 1
+    pct_start: 0.1
+    anneal_strategy: 'cos'
+    div_factor: 1
+    final_div_factor: 1
+    last_epoch: -1
+  amp: True
+  epochs: 15
+
+transforms:
+  resize_height: 224
+  resize_width: 224
+  transpose_probability: 0.5
+  vertical_flip_probability: 0.5
+  horizontal_flip_probability: 0.5
+  brightness_limit: 0.2
+  contrast_limit: 0.2
+  random_brightness_contrast_probability: 0.75
+  hue_shift_limit: 20
+  sat_shift_limit: 20
+  val_shift_limit: 20
+  hue_saturation_value_probability: 0.5
+  normalize_mean: [0.485, 0.456, 0.406]
+  normalize_std: [0.229, 0.224, 0.225]
+
+test:
+  folds: [1, 2, 3, 4, 5]
+  model_file_names: [
+    'model_fold_1_epoch_1_best_partial_auc_0.165444.pt',
+    'model_fold_2_epoch_2_best_partial_auc_0.155425.pt',
+    'model_fold_3_epoch_4_best_partial_auc_0.159246.pt',
+    'model_fold_4_epoch_3_best_partial_auc_0.160377.pt',
+    'model_fold_5_epoch_2_best_partial_auc_0.141053.pt',
+  ]
+  tta_indices: [0, 1, 2, 3, 4]
+
+persistence:
+  save_best_metrics: ['log_loss', 'roc_auc', 'partial_auc']
+  save_best_metric_higher_or_lower: ['lower', 'higher', 'higher']
+  save_epochs: []
